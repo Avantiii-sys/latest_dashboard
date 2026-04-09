@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Kesar Dashboard</title>
+
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<script>
+tailwind.config = {
+  darkMode: 'class'
+}
+</script>
+
+</head>
+
+<body class="bg-orange-50 dark:bg-[#0b1a2f] p-6 text-center">
+
+<!-- THEME BUTTON -->
+<button onclick="toggleDark()"
+class="fixed top-4 right-4 px-3 py-1 text-sm bg-orange-500 text-white rounded-md shadow">
+🌙 Toggle
+</button>
+
+<h1 class="text-3xl font-bold mb-6 text-orange-600 dark:text-cyan-300">
+🌱 Kesar Smart Dashboard
+</h1>
+
+<!-- CARDS -->
+<div class="flex justify-center gap-6 flex-wrap">
+
+  <!-- TEMP CARD -->
+  <div class="bg-white text-gray-900 dark:bg-[#1f2e45] dark:text-white p-6 rounded-xl shadow-md w-56">
+    
+    <h2 class="text-sm font-semibold text-gray-600 dark:text-gray-300">
+      🌡️ Temperature
+    </h2>
+
+    <p id="temp" class="text-3xl font-bold mt-2">
+      --
+    </p>
+
+    <p id="tempStatus"></p>
+  </div>
+
+  <!-- HUM CARD -->
+  <div class="bg-white text-gray-900 dark:bg-[#1f2e45] dark:text-white p-6 rounded-xl shadow-md w-56">
+    
+    <h2 class="text-sm font-semibold text-gray-600 dark:text-gray-300">
+      💧 Humidity
+    </h2>
+
+    <p id="hum" class="text-3xl font-bold mt-2">
+      --
+    </p>
+
+    <p id="humStatus"></p>
+  </div>
+
+</div>
+
+<!-- ALERT -->
+<div class="mt-6">
+  <h2 class="text-lg text-gray-800 dark:text-white">🚨 Alerts</h2>
+  <p id="alerts"></p>
+  <p id="lastUpdate"></p>
+  <p id="statusBadge"></p>
+</div>
+
+<!-- GRAPH -->
+<div class="mt-8 max-w-2xl mx-auto bg-white dark:bg-[#1f2e45] p-4 rounded-xl shadow-md">
+  <canvas id="chart"></canvas>
+</div>
+
+<!-- SLIDER -->
+<div class="mt-6 max-w-xl mx-auto">
+  <input type="range" id="timeSlider" class="w-full">
+  <p id="sliderTime"></p>
+
+  <button onclick="goLive()" class="mt-2 px-3 py-1 bg-green-500 text-white rounded">
+    🔴 Go Live
+  </button>
+</div>
+
+<script>
+
+// DARK MODE
+function toggleDark() {
+  document.body.classList.toggle("dark");
+}
+
+// GOOGLE SHEET
+const sheetURL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRqxlR6E4_iv6Ni_yWBED8D6zxTIHJGLD18TC_UC65xLVB_i-pSpjAwd-jeBOlRD3uQyo3juZyj-nP3/pub?output=csv";
+
+let data = [];
+let index = 0;
+let chart;
+let isManual = false;
+
+// LOAD DATA
+async function loadData() {
+  const res = await fetch("https://api.allorigins.win/raw?url=" + encodeURIComponent(sheetURL));
+  const text = await res.text();
+
+  const rows = text.trim().split("\n").slice(1);
+
+  data = rows.map(r => {
+    const c = r.split(",");
+    return {
+      time: c[0],
+      temp: parseFloat(c[1]),
+      hum: parseFloat(c[2])
+    };
+  }).filter(d => !isNaN(d.temp));
+
+  index = data.length - 1;
+
+  setupSlider();
+  drawGraph();
+  updateUI();
+}
+
+// SLIDER
+function setupSlider() {
+  const slider = document.getElementById("timeSlider");
+
+  slider.max = data.length - 1;
+  slider.value = index;
+
+  slider.oninput = function() {
+    index = parseInt(this.value);
+    isManual = true;
+    updateUI();
+  };
+}
+
+// GO LIVE
+function goLive() {
+  isManual = false;
+  index = data.length - 1;
+  document.getElementById("timeSlider").value = index;
+  updateUI();
+}
+
+// UPDATE UI
+function updateUI() {
+  const d = data[index];
+
+  document.getElementById("temp").innerText = d.temp + " °C";
+  document.getElementById("hum").innerText = d.hum + " %";
+
+  document.getElementById("tempStatus").innerText =
+    d.temp > 25 ? "High" : "Normal";
+
+  document.getElementById("tempStatus").className =
+    d.temp > 25 ? "text-red-500" : "text-green-500";
+
+  document.getElementById("humStatus").innerText =
+    d.hum < 40 ? "Low" : "Normal";
+
+  document.getElementById("humStatus").className =
+    d.hum < 40 ? "text-red-500" : "text-green-500";
+
+  document.getElementById("alerts").innerText =
+    (d.temp > 25 ? "🔥 Temp High " : "") +
+    (d.hum < 40 ? "💧 Humidity Low" : "") ||
+    "All good ✅";
+
+  document.getElementById("lastUpdate").innerText =
+    "Last updated: " + d.time;
+
+  document.getElementById("statusBadge").innerText =
+    isManual ? "🟡 Viewing Past" : "🟢 Live";
+
+  document.getElementById("sliderTime").innerText =
+    "Viewing: " + d.time;
+}
+
+// GRAPH
+function drawGraph() {
+  const ctx = document.getElementById("chart").getContext("2d");
+
+  chart = new Chart(ctx, {
+    type: "line",
+    data: {
+      labels: data.map(d => d.time),
+      datasets: [
+        {
+          label: "Temperature",
+          data: data.map(d => d.temp),
+          borderColor: "#f97316"
+        },
+        {
+          label: "Humidity",
+          data: data.map(d => d.hum),
+          borderColor: "#38bdf8"
+        }
+      ]
+    },
+    options: {
+      scales: {
+        x: {
+          ticks: {
+            autoSkip: true,
+            maxTicksLimit: 6,
+            callback: function(value, index) {
+              const label = this.getLabelForValue(value);
+              return index % 5 === 0 ? label : '';
+            }
+          }
+        }
+      }
+    }
+  });
+}
+
+// LIVE UPDATE
+setInterval(async () => {
+  if (isManual) return;
+
+  const res = await fetch("https://api.allorigins.win/raw?url=" + encodeURIComponent(sheetURL));
+  const text = await res.text();
+
+  const rows = text.trim().split("\n").slice(1);
+  const lastRow = rows[rows.length - 1].split(",");
+
+  const newData = {
+    time: lastRow[0],
+    temp: parseFloat(lastRow[1]),
+    hum: parseFloat(lastRow[2])
+  };
+
+  const lastExisting = data[data.length - 1];
+
+  if (!lastExisting || newData.time !== lastExisting.time) {
+    data.push(newData);
+
+    document.getElementById("timeSlider").max = data.length - 1;
+
+    index = data.length - 1;
+    document.getElementById("timeSlider").value = index;
+
+    chart.data.labels.push(newData.time);
+    chart.data.datasets[0].data.push(newData.temp);
+    chart.data.datasets[1].data.push(newData.hum);
+
+    chart.update();
+
+    updateUI();
+  }
+
+}, 5000);
+
+// INIT
+loadData();
+
+</script>
+
+</body>
+</html>
